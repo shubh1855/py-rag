@@ -1,5 +1,6 @@
 import argparse
 import json
+import string
 
 
 def main() -> None:
@@ -18,10 +19,22 @@ def main() -> None:
             with open("data/movies.json", "r") as file:
                 data = json.load(file)
 
+            translator = str.maketrans("", "", string.punctuation)
+
+            query = args.query.lower().translate(translator)
+            query_tokens = query.split()
+
             results = []
 
             for movie in data["movies"]:
-                if args.query.lower() in movie["title"].lower():
+                title = movie["title"].lower().translate(translator)
+                title_tokens = title.split()
+
+                if any(
+                    query_token in title_token
+                    for query_token in query_tokens
+                    for title_token in title_tokens
+                ):
                     results.append(movie)
 
             results = results[:5]
