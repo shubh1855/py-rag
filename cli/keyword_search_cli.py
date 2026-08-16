@@ -2,6 +2,8 @@ import argparse
 import json
 import string
 
+from nltk.stem import PortStemmer
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Keyword Search CLI")
@@ -21,8 +23,16 @@ def main() -> None:
 
             translator = str.maketrans("", "", string.punctuation)
 
+            with open("data/stopwords.txt", "r") as file:
+                stopwords = file.read().splitlines()
+
             query = args.query.lower().translate(translator)
             query_tokens = query.split()
+
+            stopwords = [word.lower().translate(translator) for word in stopwords]
+
+            query = args.query.lower().translate(translator)
+            query_tokens = [token for token in query.split() if token not in stopwords]
 
             results = []
 
