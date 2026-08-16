@@ -2,7 +2,7 @@ import argparse
 import json
 import string
 
-from nltk.stem import PortStemmer
+from nltk.stem import PorterStemmer
 
 
 def main() -> None:
@@ -22,23 +22,28 @@ def main() -> None:
                 data = json.load(file)
 
             translator = str.maketrans("", "", string.punctuation)
+            stemmer = PorterStemmer()
 
             with open("data/stopwords.txt", "r") as file:
                 stopwords = file.read().splitlines()
 
-            query = args.query.lower().translate(translator)
-            query_tokens = query.split()
-
             stopwords = [word.lower().translate(translator) for word in stopwords]
 
             query = args.query.lower().translate(translator)
-            query_tokens = [token for token in query.split() if token not in stopwords]
+            query_tokens = [
+                stemmer.stem(token) for token in query.split() if token not in stopwords
+            ]
 
             results = []
 
             for movie in data["movies"]:
                 title = movie["title"].lower().translate(translator)
-                title_tokens = title.split()
+
+                title_tokens = [
+                    stemmer.stem(token)
+                    for token in title.split()
+                    if token not in stopwords
+                ]
 
                 if any(
                     query_token in title_token
