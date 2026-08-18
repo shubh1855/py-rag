@@ -1,16 +1,38 @@
 import argparse
-import json
-import string
 
-from nltk.stem import PorterStemmer
+from inverted_index import InvertedIndex
+
+
+def build_command() -> None:
+    index = InvertedIndex()
+    index.build()
+    index.save()
+
+    docs = index.get_documents("merida")
+    print(f"First document for token 'merida' = {docs[0]}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Keyword Search CLI")
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    subparsers = parser.add_subparsers(
+        dest="command",
+        help="Available commands",
+    )
 
-    search_parser = subparsers.add_parser("search", help="Search movies using BM25")
-    search_parser.add_argument("query", type=str, help="Search query")
+    search_parser = subparsers.add_parser(
+        "search",
+        help="Search movies using BM25",
+    )
+    search_parser.add_argument(
+        "query",
+        type=str,
+        help="Search query",
+    )
+
+    subparsers.add_parser(
+        "build",
+        help="Build the inverted index",
+    )
 
     args = parser.parse_args()
 
@@ -18,44 +40,8 @@ def main() -> None:
         case "search":
             print("Searching for:", args.query)
 
-            with open("data/movies.json", "r") as file:
-                data = json.load(file)
-
-            translator = str.maketrans("", "", string.punctuation)
-            stemmer = PorterStemmer()
-
-            with open("data/stopwords.txt", "r") as file:
-                stopwords = file.read().splitlines()
-
-            stopwords = [word.lower().translate(translator) for word in stopwords]
-
-            query = args.query.lower().translate(translator)
-            query_tokens = [
-                stemmer.stem(token) for token in query.split() if token not in stopwords
-            ]
-
-            results = []
-
-            for movie in data["movies"]:
-                title = movie["title"].lower().translate(translator)
-
-                title_tokens = [
-                    stemmer.stem(token)
-                    for token in title.split()
-                    if token not in stopwords
-                ]
-
-                if any(
-                    query_token in title_token
-                    for query_token in query_tokens
-                    for title_token in title_tokens
-                ):
-                    results.append(movie)
-
-            results = results[:5]
-
-            for i, movie in enumerate(results, start=1):
-                print(f"{i}. {movie['title']}")
+        case "build":
+            build_command()
 
         case _:
             parser.print_help()
