@@ -1,6 +1,6 @@
 import argparse
 
-from inverted_index import InvertedIndex
+from inverted_index import InvertedIndex, tokenize_text
 
 
 def build_command() -> None:
@@ -8,8 +8,37 @@ def build_command() -> None:
     index.build()
     index.save()
 
-    docs = index.get_documents("merida")
-    print(f"First document for token 'merida' = {docs[0]}")
+
+def search_command(query: str) -> None:
+    print("Searching for:", query)
+
+    index = InvertedIndex()
+
+    try:
+        index.load()
+    except FileNotFoundError:
+        print("Error: index files not found. Run the build command first.")
+
+    query_tokens = tokenize_text(query)
+
+    results = []
+
+    for token in query_tokens:
+        docs = index.get_documents(token)
+
+        for doc_id in docs:
+            if doc_id not in results:
+                results.append(doc_id)
+
+            if len(results) == 5:
+                break
+
+        if len(results) == 5:
+            break
+
+    for doc_id in results:
+        movie = index.docmap[doc_id]
+        print(f"{doc_id}. {movie['title']}")
 
 
 def main() -> None:
@@ -38,7 +67,7 @@ def main() -> None:
 
     match args.command:
         case "search":
-            print("Searching for:", args.query)
+            search_command(args.query)
 
         case "build":
             build_command()
