@@ -1,6 +1,6 @@
 import argparse
 
-from inverted_index import InvertedIndex, tokenize_text
+from inverted_index import InvertedIndex, tokenize_term, tokenize_text
 
 
 def build_command() -> None:
@@ -41,6 +41,20 @@ def search_command(query: str) -> None:
         print(f"{doc_id}. {movie['title']}")
 
 
+def tf_command(doc_id: int, term: str) -> None:
+    index = InvertedIndex()
+
+    try:
+        index.load()
+    except FileNotFoundError:
+        print("Error: index files not found. Run the build  command first.")
+        return
+
+    token = tokenize_term(term)
+
+    print(index.get_tf(doc_id, token))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Keyword Search CLI")
     subparsers = parser.add_subparsers(
@@ -63,6 +77,12 @@ def main() -> None:
         help="Build the inverted index",
     )
 
+    tf_parser = subparsers.add_parser("tf", help="Get term frequency")
+
+    tf_parser.add_argument("doc_id", type=int, help="Document ID")
+
+    tf_parser.add_argument("term", type=str, help="Term")
+
     args = parser.parse_args()
 
     match args.command:
@@ -71,6 +91,9 @@ def main() -> None:
 
         case "build":
             build_command()
+
+        case "tf":
+            tf_command(args.doc_id, args.term)
 
         case _:
             parser.print_help()
