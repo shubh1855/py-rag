@@ -42,6 +42,20 @@ def search_command(query: str) -> None:
         print(f"{doc_id}. {movie['title']}")
 
 
+def calculate_idf(index: InvertedIndex, term: str) -> float:
+    total_documents = len(index.docmap)
+    document_frequency = len(index.get_documents(term))
+
+    return math.log((total_documents + 1) / (document_frequency + 1))
+
+
+def calculate_tf_idf(index: InvertedIndex, doc_id: int, term: str) -> float:
+    tf = index.get_tf(doc_id, term)
+    idf = calculate_idf(index, term)
+
+    return tf * idf
+
+
 def tf_command(doc_id: int, term: str) -> None:
     index = InvertedIndex()
 
@@ -67,15 +81,25 @@ def idf_command(term: str) -> None:
 
     token = tokenize_term(term)
 
-    total_documents = len(index.docmap)
-    document_frequency = len(index.get_documents(token))
-
-    if document_frequency == 0:
-        idf = 0
-    else:
-        idf = math.log((total_documents + 1) / (document_frequency + 1))
+    idf = calculate_idf(index, token)
 
     print(f"Inverse document frequency of '{term}': {idf:.2f}")
+
+
+def tfidf_command(doc_id: int, term: str) -> None:
+    index = InvertedIndex()
+
+    try:
+        index.load()
+    except FileNotFoundError:
+        print("Error: index files not found. Run the build command first.")
+        return
+
+    token = tokenize_term(term)
+
+    tf_idf = calculate_tf_idf(index, doc_id, token)
+
+    print(f"TF-IDF score of '{term}' in document '{doc_id}': {tf_idf:.2f}")
 
 
 def main() -> None:
@@ -102,16 +126,17 @@ def main() -> None:
     )
 
     tf_parser = subparsers.add_parser("tf", help="Get term frequency")
-
     tf_parser.add_argument("doc_id", type=int, help="Document ID")
-
     tf_parser.add_argument("term", type=str, help="Term")
 
     idf_parser = subparsers.add_parser(
         "idf", help="Calculate inverse document frequency"
     )
-
     idf_parser.add_argument("term", type=str, help="Term to Calculate IDF for")
+
+    tfidf_parser = subparsers.add_parser("tfidf", help="Calculate TF-IDF score")
+    tfidf_parser.add_argument("doc_id", type=int, help="Document ID")
+    tfidf_parser.add_argument("term", type=str, help="Term")
 
     args = parser.parse_args()
 
@@ -127,6 +152,9 @@ def main() -> None:
 
         case "idf":
             idf_command(args.term)
+
+        case "tfidf":
+            tfidf_command(args.doc_id, args.term)
 
         case _:
             parser.print_help()
