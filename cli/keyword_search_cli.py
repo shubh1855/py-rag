@@ -1,4 +1,5 @@
 import argparse
+import math
 
 from inverted_index import InvertedIndex, tokenize_term, tokenize_text
 
@@ -55,6 +56,28 @@ def tf_command(doc_id: int, term: str) -> None:
     print(index.get_tf(doc_id, token))
 
 
+def idf_command(term: str) -> None:
+    index = InvertedIndex()
+
+    try:
+        index.load()
+    except FileNotFoundError:
+        print("Error: index files not found. Run the build command first.")
+        return
+
+    token = tokenize_term(term)
+
+    total_documents = len(index.docmap)
+    document_frequency = len(index.get_documents(token))
+
+    if document_frequency == 0:
+        idf = 0
+    else:
+        idf = math.log((total_documents + 1) / (document_frequency + 1))
+
+    print(f"Inverse document frequency of '{term}': {idf:.2f}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Keyword Search CLI")
     subparsers = parser.add_subparsers(
@@ -66,6 +89,7 @@ def main() -> None:
         "search",
         help="Search movies using BM25",
     )
+
     search_parser.add_argument(
         "query",
         type=str,
@@ -83,6 +107,12 @@ def main() -> None:
 
     tf_parser.add_argument("term", type=str, help="Term")
 
+    idf_parser = subparsers.add_parser(
+        "idf", help="Calculate inverse document frequency"
+    )
+
+    idf_parser.add_argument("term", type=str, help="Term to Calculate IDF for")
+
     args = parser.parse_args()
 
     match args.command:
@@ -94,6 +124,9 @@ def main() -> None:
 
         case "tf":
             tf_command(args.doc_id, args.term)
+
+        case "idf":
+            idf_command(args.term)
 
         case _:
             parser.print_help()
