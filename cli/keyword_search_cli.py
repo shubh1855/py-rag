@@ -102,6 +102,20 @@ def tfidf_command(doc_id: int, term: str) -> None:
     print(f"TF-IDF score of '{term}' in document '{doc_id}': {tf_idf:.2f}")
 
 
+def bm25_idf_command(term: str):
+    index = InvertedIndex()
+
+    try:
+        index.load()
+    except FileNotFoundError:
+        print("Error: index files not found. Run the build command")
+        return 0.0
+
+    token = tokenize_term(term)
+
+    return index.get_bm25_idf(token)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Keyword Search CLI")
     subparsers = parser.add_subparsers(
@@ -138,6 +152,13 @@ def main() -> None:
     tfidf_parser.add_argument("doc_id", type=int, help="Document ID")
     tfidf_parser.add_argument("term", type=str, help="Term")
 
+    bm25_idf_parser = subparsers.add_parser(
+        "bm25idf", help="Get BM25 IDF score for a given term"
+    )
+    bm25_idf_parser.add_argument(
+        "term", type=str, help="Term to get BM25 IDF score for"
+    )
+
     args = parser.parse_args()
 
     match args.command:
@@ -155,6 +176,10 @@ def main() -> None:
 
         case "tfidf":
             tfidf_command(args.doc_id, args.term)
+
+        case "bm25idf":
+            bm25idf = bm25_idf_command(args.term)
+            print(f"BM25 IDF score of '{args.term}': {bm25idf:.2f}")
 
         case _:
             parser.print_help()

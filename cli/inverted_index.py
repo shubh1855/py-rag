@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import pickle
 import string
@@ -90,6 +91,12 @@ class InvertedIndex:
             return 0
 
         return self.term_frequencies[doc_id].get(term, 0)
+
+    def get_bm25_idf(self, term: str) -> float:
+        N = len(self.docmap)
+        df = len(self.get_documents(term))
+
+        return math.log((N - df + 0.5) / (df + 0.5) + 1)
 
 
 def tokenize_term(term):
