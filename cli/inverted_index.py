@@ -7,6 +7,8 @@ from collections import Counter
 
 from nltk.stem import PorterStemmer
 
+BM25_K1 = 1.5
+
 translator = str.maketrans("", "", string.punctuation)
 stemmer = PorterStemmer()
 
@@ -97,6 +99,11 @@ class InvertedIndex:
         df = len(self.get_documents(term))
 
         return math.log((N - df + 0.5) / (df + 0.5) + 1)
+
+    def get_bm25_tf(self, doc_id, term, k1=BM25_K1):
+        tf = self.get_tf(doc_id, term)
+
+        return (tf * (k1 + 1)) / (tf + k1)
 
 
 def tokenize_term(term):
