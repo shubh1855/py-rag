@@ -4,4 +4,8 @@ version = "0.1.0"
 description = "Rag based search engine"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = ["nltk==3.9.1", "sentence-transformers>=6.0.0"]
+dependencies = [
+    "nltk==3.9.1",
+    "numpy==2.3.3",
+    "sentence-transformers>=6.0.0",
+]
