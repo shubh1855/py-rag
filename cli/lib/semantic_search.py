@@ -3,6 +3,7 @@ import os
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
+from torch import embedding
 
 
 class SemanticSearch:
@@ -65,6 +66,15 @@ def embed_text(text):
     embedding = search.generate_embedding(text)
 
     print(f"Text: {text}")
+    print(f"First 3 dimensions: {embedding[:3]}")
+    print(f"Dimensions: {embedding.shape[0]}")
+
+
+def embed_query_text(query):
+    search = SemanticSearch()
+    embedding = search.generate_embedding(query)
+
+    print(f"Query: {query}")
     print(f"First 3 dimensions: {embedding[:3]}")
     print(f"Dimensions: {embedding.shape[0]}")
 
