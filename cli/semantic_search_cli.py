@@ -1,6 +1,8 @@
 import argparse
+import json
 
 from lib.semantic_search import (
+    SemanticSearch,
     embed_query_text,
     embed_text,
     verify_embeddings,
@@ -25,7 +27,6 @@ def main() -> None:
         "embed_text",
         help="Generate an embedding for text",
     )
-
     embed_parser.add_argument(
         "text",
         type=str,
@@ -47,6 +48,22 @@ def main() -> None:
         help="Search query to embed",
     )
 
+    search_parser = subparsers.add_parser(
+        "search",
+        help="Search movies using semantic search",
+    )
+    search_parser.add_argument(
+        "query",
+        type=str,
+        help="Search query",
+    )
+    search_parser.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help="Maximum number of results",
+    )
+
     args = parser.parse_args()
 
     match args.command:
@@ -58,6 +75,22 @@ def main() -> None:
             verify_embeddings()
         case "embed_query":
             embed_query_text(args.query)
+        case "search":
+            search = SemanticSearch()
+
+            with open("data/movies.json", "r") as file:
+                data = json.load(file)
+
+            documents = data["movies"]
+
+            search.load_or_create_embeddings(documents)
+
+            results = search.search(args.query, args.limit)
+
+            for i, result in enumerate(results, start=1):
+                print(f"{i}. {result['title']} (score: {result['score']:.4f})")
+                print(f"  {result['description']}")
+                print()
         case _:
             parser.print_help()
 
