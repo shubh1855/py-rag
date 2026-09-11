@@ -10,6 +10,18 @@ from lib.semantic_search import (
 )
 
 
+def chunk_command(text: str, chunk_size: int) -> None:
+    words = text.split()
+    chunks = [
+        " ".join(words[i : i + chunk_size]) for i in range(0, len(words), chunk_size)
+    ]
+
+    print(f"Chunking {len(text)} characters")
+
+    for i, chunk in enumerate(chunks, start=1):
+        print(f"{i}. {chunk}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Semantic Search CLI")
 
@@ -31,11 +43,6 @@ def main() -> None:
         "text",
         type=str,
         help="Text to embed",
-    )
-
-    verify_embeddings_parser = subparsers.add_parser(
-        "verify_embeddings",
-        help="Build or load movie embeddings",
     )
 
     embed_query_parser = subparsers.add_parser(
@@ -62,6 +69,21 @@ def main() -> None:
         type=int,
         default=5,
         help="Maximum number of results",
+    )
+    chunk_parser = subparsers.add_parser(
+        "chunk",
+        help="Split text into fixed-size chunks",
+    )
+    chunk_parser.add_argument(
+        "text",
+        type=str,
+        help="Text to chunk",
+    )
+    chunk_parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=200,
+        help="Number of words per chunk",
     )
 
     args = parser.parse_args()
@@ -91,6 +113,8 @@ def main() -> None:
                 print(f"{i}. {result['title']} (score: {result['score']:.4f})")
                 print(f"  {result['description']}")
                 print()
+        case "chunk":
+            chunk_command(args.text, args.chunk_size)
         case _:
             parser.print_help()
 
