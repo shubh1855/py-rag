@@ -1,5 +1,7 @@
 import argparse
 import json
+import re
+from typing import overload
 
 from lib.semantic_search import (
     SemanticSearch,
@@ -31,6 +33,38 @@ def chunk_command(text: str, chunk_size: int, overlap: int) -> None:
         start += chunk_size - overlap
 
     print(f"Chunking {len(text)} characters")
+
+    for i, chunk in enumerate(chunks, start=1):
+        print(f"{i}. {chunk}")
+
+
+def semantic_chunk_command(
+    text: str,
+    max_chunk_size: int,
+    overlap: int,
+) -> None:
+    if max_chunk_size <= 0:
+        raise ValueError("Max chunk size must be greater than 0.")
+
+    if overlap < 0:
+        raise ValueError("Overlap cannot be negative.")
+
+    if overlap >= max_chunk_size:
+        raise ValueError("Overlap must be less than max chunk size.")
+
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    sentences = [sentence for sentence in sentences if sentence]
+
+    chunks = []
+
+    start = 0
+    while start < len(sentences):
+        chunk = " ".join(sentences[start : start + max_chunk_size])
+        chunks.append(chunk)
+
+        start += max_chunk_size - overlap
+
+    print(f"Semantically chunking {len(text)} characters")
 
     for i, chunk in enumerate(chunks, start=1):
         print(f"{i}. {chunk}")
@@ -84,6 +118,7 @@ def main() -> None:
         default=5,
         help="Maximum number of results",
     )
+
     chunk_parser = subparsers.add_parser(
         "chunk",
         help="Split text into fixed-size chunks",
@@ -104,6 +139,28 @@ def main() -> None:
         type=int,
         default=0,
         help="Number of words to overlap between the chunks",
+    )
+
+    semantic_chunk_parser = subparsers.add_parser(
+        "semantic_chunk",
+        help="Split text into semantic sentence-based chunks",
+    )
+    semantic_chunk_parser.add_argument(
+        "text",
+        type=str,
+        help="Text to chunk",
+    )
+    semantic_chunk_parser.add_argument(
+        "--max-chunk-size",
+        type=int,
+        default=4,
+        help="Maximum number of sentences per chunk",
+    )
+    semantic_chunk_parser.add_argument(
+        "--overlap",
+        type=int,
+        default=0,
+        help="Number of sentences to overlap between chunks",
     )
 
     args = parser.parse_args()
@@ -135,6 +192,12 @@ def main() -> None:
                 print()
         case "chunk":
             chunk_command(args.text, args.chunk_size, args.overlap)
+        case "semantic_chunk":
+            semantic_chunk_command(
+                args.text,
+                args.max_chunk_size,
+                args.overlap,
+            )
         case _:
             parser.print_help()
 
