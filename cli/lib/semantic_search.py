@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import Any
 
 import numpy as np
@@ -7,8 +8,8 @@ from sentence_transformers import SentenceTransformer
 
 
 class SemanticSearch:
-    def __init__(self):
-        self.model = SentenceTransformer("all-MiniLM-L6-v2")
+    def __init__(self, model_name: str = "all-MiniLM-L6-v2") -> None:
+        self.model = SentenceTransformer(model_name)
         self.embeddings: np.ndarray | None = None
         self.documents: list[dict[str, Any]] | None = None
         self.document_map: dict[int, dict[str, Any]] = {}
@@ -82,6 +83,101 @@ class SemanticSearch:
         ]
 
 
+class ChunkedSemanticSearch(SemanticSearch):
+    def __init__(self, model_name: str = "all-MiniLM-L6-v2") -> None:
+        super().__init__(model_name)
+        self.chunk_embeddings: np.ndarray | None = None
+        self.chunk_metadata: list[dict[str, int]] | None = None
+
+    def build_chunk_embeddings(
+        self,
+        documents: list[dict],
+    ) -> np.ndarray:
+        self.documents = documents
+
+        for doc in documents:
+            self.document_map[doc["id"]] = doc
+
+        all_chunks = []
+        chunk_metadata = []
+
+        for movie_idx, doc in enumerate(self.documents):
+            description = doc["description"]
+
+            if not description.strip():
+                continue
+
+            chunks = semantic_chunk(
+                description,
+                max_chunk_size=4,
+                overlap=1,
+            )
+
+            total_chunks = len(chunks)
+
+            for chunk_idx, chunk in enumerate(chunks):
+                all_chunks.append(chunk)
+
+                chunk_metadata.append(
+                    {
+                        "movie_idx": movie_idx,
+                        "chunk_idx": chunk_idx,
+                        "total_chunks": total_chunks,
+                    }
+                )
+
+        self.chunk_embeddings = self.model.encode(
+            all_chunks,
+            show_progress_bar=True,
+        )
+
+        self.chunk_metadata = chunk_metadata
+
+        os.makedirs("cache", exist_ok=True)
+
+        np.save(
+            "cache/chunk_embeddings.npy",
+            self.chunk_embeddings,
+        )
+
+        with open("cache/chunk_metadata.json", "w") as f:
+            json.dump(
+                {
+                    "chunks": chunk_metadata,
+                    "total_chunks": len(all_chunks),
+                },
+                f,
+                indent=2,
+            )
+
+        return self.chunk_embeddings
+
+    def load_or_create_chunk_embeddings(
+        self,
+        documents: list[dict],
+    ) -> np.ndarray:
+        self.documents = documents
+
+        for doc in documents:
+            self.document_map[doc["id"]] = doc
+
+        embeddings_path = "cache/chunk_embeddings.npy"
+        metadata_path = "cache/chunk_metadata.json"
+
+        if os.path.exists(embeddings_path) and os.path.exists(metadata_path):
+            embeddings = np.load(embeddings_path)
+            self.chunk_embeddings = embeddings
+
+            with open(metadata_path, "r") as f:
+                metadata = json.load(f)
+
+            self.chunk_metadata = metadata["chunks"]
+
+            return embeddings
+
+        return self.build_chunk_embeddings(documents)
+
+
 def cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
     dot_product = np.dot(vec1, vec2)
     norm1 = np.linalg.norm(vec1)
@@ -91,6 +187,40 @@ def cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
         return 0.0
 
     return dot_product / (norm1 * norm2)
+
+
+def semantic_chunk(
+    text: str,
+    max_chunk_size: int,
+    overlap: int,
+) -> list[str]:
+    if max_chunk_size <= 0:
+        raise ValueError("Max chunk size must be greater than 0.")
+
+    if overlap < 0:
+        raise ValueError("Overlap cannot be negative.")
+
+    if overlap >= max_chunk_size:
+        raise ValueError("Overlap must be less than max chunk size.")
+
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    sentences = [sentence for sentence in sentences if sentence]
+
+    chunks = []
+    start = 0
+    step = max_chunk_size - overlap
+
+    while start < len(sentences):
+        end = start + max_chunk_size
+        chunk = " ".join(sentences[start:end])
+        chunks.append(chunk)
+
+        if end >= len(sentences):
+            break
+
+        start += step
+
+    return chunks
 
 
 def verify_model() -> None:

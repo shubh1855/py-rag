@@ -1,12 +1,12 @@
 import argparse
 import json
-import re
-from typing import overload
 
 from lib.semantic_search import (
+    ChunkedSemanticSearch,
     SemanticSearch,
     embed_query_text,
     embed_text,
+    semantic_chunk,
     verify_embeddings,
     verify_model,
 )
@@ -43,26 +43,11 @@ def semantic_chunk_command(
     max_chunk_size: int,
     overlap: int,
 ) -> None:
-    if max_chunk_size <= 0:
-        raise ValueError("Max chunk size must be greater than 0.")
-
-    if overlap < 0:
-        raise ValueError("Overlap cannot be negative.")
-
-    if overlap >= max_chunk_size:
-        raise ValueError("Overlap must be less than max chunk size.")
-
-    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
-    sentences = [sentence for sentence in sentences if sentence]
-
-    chunks = []
-
-    start = 0
-    while start < len(sentences):
-        chunk = " ".join(sentences[start : start + max_chunk_size])
-        chunks.append(chunk)
-
-        start += max_chunk_size - overlap
+    chunks = semantic_chunk(
+        text,
+        max_chunk_size,
+        overlap,
+    )
 
     print(f"Semantically chunking {len(text)} characters")
 
@@ -163,6 +148,11 @@ def main() -> None:
         help="Number of sentences to overlap between chunks",
     )
 
+    subparsers.add_parser(
+        "embed_chunks",
+        help="Generate or load chunk embeddings",
+    )
+
     args = parser.parse_args()
 
     match args.command:
@@ -198,6 +188,14 @@ def main() -> None:
                 args.max_chunk_size,
                 args.overlap,
             )
+        case "embed_chunks":
+            with open("data/movies.json", "r") as file:
+                data = json.load(file)
+
+            documents = data["movies"]
+            search = ChunkedSemanticSearch()
+            embeddings = search.load_or_create_chunk_embeddings(documents)
+            print(f"Generated {len(embeddings)} chunked embeddings")
         case _:
             parser.print_help()
 
