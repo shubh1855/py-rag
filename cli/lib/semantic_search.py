@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 import numpy as np
+from lib.search_utils import format_search_result
 from sentence_transformers import SentenceTransformer
 
 
@@ -176,6 +177,79 @@ class ChunkedSemanticSearch(SemanticSearch):
             return embeddings
 
         return self.build_chunk_embeddings(documents)
+
+    def search_chunks(
+        self,
+        query: str,
+        limit: int = 10,
+    ) -> list[dict]:
+        if self.chunk_embeddings is None or self.chunk_metadata is None:
+            raise ValueError(
+                "No chunk embeddings loaded. Call `load_or_create_chunk_embeddings` first."
+            )
+
+        if self.documents is None:
+            raise ValueError("No documents loaded.")
+
+        query_embedding = self.generate_embedding(query)
+
+        chunk_scores = []
+
+        for chunk_idx, chunk_embedding in enumerate(self.chunk_embeddings):
+            metadata = self.chunk_metadata[chunk_idx]
+
+            score = cosine_similarity(
+                query_embedding,
+                chunk_embedding,
+            )
+
+            chunk_scores.append(
+                {
+                    "chunk_idx": metadata["chunk_idx"],
+                    "movie_idx": metadata["movie_idx"],
+                    "score": score,
+                }
+            )
+
+        movie_scores = {}
+
+        for chunk_score in chunk_scores:
+            movie_idx = chunk_score["movie_idx"]
+            score = chunk_score["score"]
+
+            if (
+                movie_idx not in movie_scores
+                or score > movie_scores[movie_idx]["score"]
+            ):
+                movie_scores[movie_idx] = chunk_score
+
+        sorted_movies = sorted(
+            movie_scores.values(),
+            key=lambda item: item["score"],
+            reverse=True,
+        )
+
+        top_movies = sorted_movies[:limit]
+
+        results = []
+
+        for movie_score in top_movies:
+            movie_idx = movie_score["movie_idx"]
+            score = movie_score["score"]
+
+            document = self.documents[movie_idx]
+
+            results.append(
+                format_search_result(
+                    id=document["id"],
+                    title=document["title"],
+                    document=document["description"][:100],
+                    score=score,
+                    metadata={},
+                )
+            )
+
+        return results
 
 
 def cosine_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
