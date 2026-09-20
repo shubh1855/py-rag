@@ -1,5 +1,8 @@
 import argparse
 
+from inverted_index import load_movies
+from lib.hybrid_search import HybridSearch
+
 
 def normalize_scores(scores: list[float]) -> None:
     if not scores:
@@ -38,11 +41,54 @@ def main() -> None:
         help="Scores to normalize",
     )
 
+    weighted_parser = subparsers.add_parser(
+        "weighted-search",
+        help="Run weighted hybrid Search",
+    )
+    weighted_parser.add_argument(
+        "query",
+        type=str,
+        help="Search",
+    )
+    weighted_parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.5,
+        help="Weight given to BM25 scores",
+    )
+    weighted_parser.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help="Number of results to return",
+    )
+
     args = parser.parse_args()
 
     match args.command:
         case "normalize":
             normalize_scores(args.scores)
+        case "weighted-search":
+            documents = load_movies()
+
+            hybrid = HybridSearch(documents)
+
+            results = hybrid.weighted_search(
+                args.query,
+                args.alpha,
+                args.limit,
+            )
+
+            for i, result in enumerate(results[: args.limit], start=1):
+                document = result["document"]
+
+                print(f"{i}. {document['title']}")
+                print(f"  Hybrid Score: {result['hybrid_score']:.3f}")
+                print(
+                    f"  BM25: {result['bm25_score']:.3f}, "
+                    f"Semantic: {result['semantic_score']:.3f}"
+                )
+                print(f"  {document['description'][:100]}...")
         case _:
             parser.print_help()
 
