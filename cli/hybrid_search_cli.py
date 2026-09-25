@@ -64,6 +64,45 @@ User query: "{query}"
     return enhanced_query.strip()
 
 
+def rewrite_query(query: str) -> str:
+    prompt = f"""Rewrite the user-provided movie search query below to be more specific and searchable.
+
+Consider:
+- Common movie knowledge (famous actors, popular films)
+- Genre conventions (horror = scary, animation = cartoon)
+- Keep the rewritten query concise (under 10 words)
+- It should be a Google-style search query, specific enough to yield relevant results
+- Don't use boolean logic
+
+Examples:
+- "that bear movie where leo gets attacked" -> "The Revenant Leonardo DiCaprio bear attack"
+- "movie about bear in london with marmalade" -> "Paddington London marmalade"
+- "scary movie with bear from few years ago" -> "bear horror movie 2015-2020"
+
+If you cannot improve the query, output the original unchanged.
+Output only the rewritten query text, nothing else.
+
+User query: "{query}"
+"""
+
+    response = client.chat.completions.create(
+        model="openrouter/free",
+        messages=[
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+    )
+
+    rewritten_query = response.choices[0].message.content
+
+    if not rewritten_query:
+        return query
+
+    return rewritten_query.strip()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hybrid Search CLI")
 
@@ -129,7 +168,7 @@ def main() -> None:
     rrf_parser.add_argument(
         "--enhance",
         type=str,
-        choices=["spell"],
+        choices=["spell", "rewrite"],
         help="query enhancement method",
     )
 
@@ -166,6 +205,17 @@ def main() -> None:
 
             if args.enhance == "spell":
                 enhanced_query = enhance_query_with_spell(query)
+
+                if enhanced_query != query:
+                    print(
+                        f"Enhanced query ({args.enhance}): "
+                        f"'{query}' -> '{enhanced_query}'\n"
+                    )
+
+                query = enhanced_query
+
+            elif args.enhance == "rewrite":
+                enhanced_query = rewrite_query(query)
 
                 if enhanced_query != query:
                     print(
