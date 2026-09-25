@@ -1,7 +1,22 @@
 import argparse
+import os
 
+from dotenv import load_dotenv
 from inverted_index import load_movies
 from lib.hybrid_search import HybridSearch
+from openai import OpenAI
+
+load_dotenv()
+
+api_key = os.environ.get("OPENROUTER_API_KEY")
+
+if not api_key:
+    raise RuntimeError("OPENROUTER_API_KEY environment variable is not set")
+
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=api_key,
+)
 
 
 def normalize_scores(scores: list[float]) -> None:
@@ -20,6 +35,33 @@ def normalize_scores(scores: list[float]) -> None:
 
     for score in normalized_scores:
         print(f"* {score:.4f}")
+
+
+def enhance_query_with_spell(query: str) -> str:
+    prompt = f"""Fix any spelling errors in the user-provided movie search query below.
+Correct only clear, high-confidence typos. Do not rewrite, add, remove, or reorder words.
+Preserve punctuation and capitalization unless a change is required for a typo fix.
+If there are no spelling errors, or if you're unsure, output the original query unchanged.
+Output only the final query text, nothing else.
+User query: "{query}"
+"""
+
+    response = client.chat.completions.create(
+        model="openrouter/free",
+        messages=[
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+    )
+
+    enhanced_query = response.choices[0].message.content
+
+    if not enhanced_query:
+        return query
+
+    return enhanced_query.strip()
 
 
 def main() -> None:
@@ -84,6 +126,12 @@ def main() -> None:
         default=5,
         help="Number of results to return",
     )
+    rrf_parser.add_argument(
+        "--enhance",
+        type=str,
+        choices=["spell"],
+        help="query enhancement method",
+    )
 
     args = parser.parse_args()
 
@@ -114,10 +162,23 @@ def main() -> None:
         case "rrf-search":
             documents = load_movies()
 
+            query = args.query
+
+            if args.enhance == "spell":
+                enhanced_query = enhance_query_with_spell(query)
+
+                if enhanced_query != query:
+                    print(
+                        f"Enhanced query ({args.enhance}): "
+                        f"'{query}' -> '{enhanced_query}'\n"
+                    )
+
+                query = enhanced_query
+
             hybrid = HybridSearch(documents)
 
             results = hybrid.rrf_search(
-                args.query,
+                query,
                 args.k,
                 args.limit,
             )
