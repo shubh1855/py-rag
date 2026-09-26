@@ -5,13 +5,14 @@ from dotenv import load_dotenv
 from inverted_index import load_movies
 from lib.hybrid_search import HybridSearch
 from openai import OpenAI
+from openai.types.chat import ChatCompletionMessageParam
 
 load_dotenv()
 
 api_key = os.environ.get("OPENROUTER_API_KEY")
 
 if not api_key:
-    raise RuntimeError("OPENROUTER_API_KEY environment variable is not set")
+    raise RuntimeError("OPENROUTER_API_KEY environment variable not set")
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
@@ -46,14 +47,16 @@ Output only the final query text, nothing else.
 User query: "{query}"
 """
 
+    messages: list[ChatCompletionMessageParam] = [
+        {
+            "role": "user",
+            "content": prompt,
+        }
+    ]
+
     response = client.chat.completions.create(
         model="openrouter/free",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        ],
+        messages=messages,
     )
 
     enhanced_query = response.choices[0].message.content
@@ -85,14 +88,16 @@ Output only the rewritten query text, nothing else.
 User query: "{query}"
 """
 
+    messages: list[ChatCompletionMessageParam] = [
+        {
+            "role": "user",
+            "content": prompt,
+        }
+    ]
+
     response = client.chat.completions.create(
         model="openrouter/free",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        ],
+        messages=messages,
     )
 
     rewritten_query = response.choices[0].message.content
@@ -101,6 +106,49 @@ User query: "{query}"
         return query
 
     return rewritten_query.strip()
+
+
+def expand_query(query: str) -> str:
+    prompt = f"""Expand the user-provided movie search query below with related terms.
+
+Add synonyms and related concepts that might appear in movie descriptions.
+Keep expansions relevant and focused.
+Prefer both subject-specific terms and concepts describing characters, themes, or situations.
+For math-related queries, include concepts such as mathematics, equations, genius, intelligence, professor, or problem-solving when relevant.
+Output only the additional terms; they will be appended to the original query.
+
+Examples:
+- "scary bear movie" -> "scary horror grizzly bear movie terrifying film"
+- "action movie with bear" -> "action thriller bear chase fight adventure"
+- "comedy with bear" -> "comedy funny bear humor lighthearted"
+- "math movie" -> "mathematics equations genius intelligence professor problem-solving"
+
+User query: "{query}"
+"""
+
+    messages: list[ChatCompletionMessageParam] = [
+        {
+            "role": "user",
+            "content": prompt,
+        }
+    ]
+
+    response = client.chat.completions.create(
+        model="openrouter/free",
+        messages=messages,
+    )
+
+    additional_terms = response.choices[0].message.content
+
+    if not additional_terms:
+        return query
+
+    additional_terms = additional_terms.strip()
+
+    if not additional_terms:
+        return query
+
+    return f"{query} {additional_terms}"
 
 
 def main() -> None:
@@ -115,6 +163,7 @@ def main() -> None:
         "normalize",
         help="Normalize scores using min-max normalization",
     )
+
     normalize_parser.add_argument(
         "scores",
         nargs="*",
@@ -124,19 +173,22 @@ def main() -> None:
 
     weighted_parser = subparsers.add_parser(
         "weighted-search",
-        help="Run weighted hybrid Search",
+        help="Run weighted hybrid search",
     )
+
     weighted_parser.add_argument(
         "query",
         type=str,
-        help="Search",
+        help="Search query",
     )
+
     weighted_parser.add_argument(
         "--alpha",
         type=float,
         default=0.5,
         help="Weight given to BM25 scores",
     )
+
     weighted_parser.add_argument(
         "--limit",
         type=int,
@@ -146,30 +198,34 @@ def main() -> None:
 
     rrf_parser = subparsers.add_parser(
         "rrf-search",
-        help="Run RRF hybrid Search",
+        help="Run RRF hybrid search",
     )
+
     rrf_parser.add_argument(
         "query",
         type=str,
         help="Search query",
     )
+
     rrf_parser.add_argument(
         "-k",
         type=int,
         default=60,
         help="RRF constant",
     )
+
     rrf_parser.add_argument(
         "--limit",
         type=int,
         default=5,
         help="Number of results to return",
     )
+
     rrf_parser.add_argument(
         "--enhance",
         type=str,
-        choices=["spell", "rewrite"],
-        help="query enhancement method",
+        choices=["spell", "rewrite", "expand"],
+        help="Query enhancement method",
     )
 
     args = parser.parse_args()
@@ -177,6 +233,7 @@ def main() -> None:
     match args.command:
         case "normalize":
             normalize_scores(args.scores)
+
         case "weighted-search":
             documents = load_movies()
 
@@ -198,6 +255,7 @@ def main() -> None:
                     f"Semantic: {result['semantic_score']:.3f}"
                 )
                 print(f"  {document['description'][:100]}...")
+
         case "rrf-search":
             documents = load_movies()
 
@@ -206,29 +264,25 @@ def main() -> None:
             if args.enhance == "spell":
                 enhanced_query = enhance_query_with_spell(query)
 
-                if enhanced_query != query:
-                    print(
-                        f"Enhanced query ({args.enhance}): "
-                        f"'{query}' -> '{enhanced_query}'\n"
-                    )
-
-                query = enhanced_query
-
             elif args.enhance == "rewrite":
                 enhanced_query = rewrite_query(query)
 
-                if enhanced_query != query:
-                    print(
-                        f"Enhanced query ({args.enhance}): "
-                        f"'{query}' -> '{enhanced_query}'\n"
-                    )
+            elif args.enhance == "expand":
+                enhanced_query = expand_query(query)
 
-                query = enhanced_query
+            else:
+                enhanced_query = query
+
+            if enhanced_query != query:
+                print(
+                    f"Enhanced query ({args.enhance}): "
+                    f"'{query}' -> '{enhanced_query}'\n"
+                )
 
             hybrid = HybridSearch(documents)
 
             results = hybrid.rrf_search(
-                query,
+                enhanced_query,
                 args.k,
                 args.limit,
             )
@@ -243,6 +297,7 @@ def main() -> None:
                     f"Semantic Rank: {result['semantic_rank']}"
                 )
                 print(f"  {document['description'][:100]}...")
+
         case _:
             parser.print_help()
 
