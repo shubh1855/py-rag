@@ -162,10 +162,14 @@ class InvertedIndex:
         return ranked_documents[:limit]
 
 
-def tokenize_term(term):
+class InvalidTermError(Exception):
+    pass
+
+
+def tokenize_term(term: str) -> str:
     tokens = tokenize_text(term)
 
     if len(tokens) != 1:
-        raise Exception("Term must contain exactly one token")
+        raise InvalidTermError("Term must contain exactly one token")
 
     return tokens[0]
