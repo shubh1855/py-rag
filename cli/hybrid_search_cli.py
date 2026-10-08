@@ -91,7 +91,7 @@ def main() -> None:
     rrf_parser.add_argument(
         "--rerank-method",
         type=str,
-        choices=["individual"],
+        choices=["individual", "batch"],
         help="Reranking method",
     )
 
@@ -169,9 +169,12 @@ def main() -> None:
                 print(f"\n{i}. {res['title']}")
 
                 individual_score = res.get("individual_score")
+                rerank_rank = res["metadata"].get("rerank_method")
 
                 if individual_score is not None:
                     print(f"   Re-rank Score: {individual_score:.3f}/10")
+                elif rerank_rank is not None:
+                    print(f"   Re-rank Rank: {rerank_rank}")
 
                 metadata = res["metadata"]
 

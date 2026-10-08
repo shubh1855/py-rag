@@ -1,3 +1,4 @@
+import json
 import os
 import re
 from time import sleep
@@ -101,13 +102,111 @@ def llm_rerank_individual(
     return scored_docs[:limit]
 
 
+def llm_rerank_batch(
+    query: str,
+    documents: list[SearchResult],
+    limit: int = 5,
+) -> list[SearchResult]:
+    doc_list_str = "\n".join(
+        f"{doc['id']}: {doc['title']} - {doc['document']}" for doc in documents
+    )
+
+    prompt = f"""Rank the movies listed below by relevance to the following search query.
+
+Query: "{query}"
+
+Movies:
+{doc_list_str}
+
+Return the movie IDs in order of relevance, best match first.
+
+Your response must be a raw JSON array of integers.
+Do not wrap the JSON in Markdown. Do not use a ```json code block.
+Do not include any explanatory text.
+
+For example:
+[75, 12, 34, 2, 1]
+
+Ranking:"""
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+    )
+
+    response_text = (response.choices[0].message.content or "").strip()
+
+    try:
+        ranked_ids = json.loads(response_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"LLM returned invalid JSON for batch reranking: {response_text!r}"
+        ) from exc
+
+    if not isinstance(ranked_ids, list) or not all(
+        isinstance(movie_id, int) for movie_id in ranked_ids
+    ):
+        raise ValueError("LLM batch ranking must be a JSON array of integers")
+
+    document_map = {doc["id"]: doc for doc in documents}
+
+    ranked_results: list[SearchResult] = []
+    ranked_document_ids: set[int] = set()
+
+    for rank, movie_id in enumerate(ranked_ids, start=1):
+        doc = document_map.get(movie_id)
+
+        if doc is None or movie_id in ranked_document_ids:
+            continue
+
+        ranked_results.append(
+            {
+                **doc,
+                "metadata": {
+                    **doc.get("metadata", {}),
+                    "rerank_rank": rank,
+                },
+            }
+        )
+        ranked_document_ids.add(movie_id)
+
+    remaining_rank = len(ranked_results) + 1
+
+    for doc in documents:
+        if doc["id"] in ranked_document_ids:
+            continue
+
+        ranked_results.append(
+            {
+                **doc,
+                "metadata": {
+                    **doc.get("metadata", {}),
+                    "rerank_rank": remaining_rank,
+                },
+            }
+        )
+        ranked_document_ids.add(doc["id"])
+        remaining_rank += 1
+
+    ranked_results.sort(
+        key=lambda result: result["metadata"].get("rerank_rank", float("inf"))
+    )
+
+    return ranked_results[:limit]
+
+
 def rerank(
     query: str,
     documents: list[SearchResult],
-    method: Literal["individual"] = "individual",
+    method: Literal["individual", "batch"] = "batch",
     limit: int = 5,
 ) -> list[SearchResult]:
     if method == "individual":
         return llm_rerank_individual(query, documents, limit)
 
-    return documents[:limit]
+    return llm_rerank_batch(query, documents, limit)

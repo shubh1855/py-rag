@@ -45,7 +45,7 @@ class RRFSearchCommandResult(TypedDict):
     enhance_method: Literal["spell", "expand", "rewrite"] | None
     query: str
     k: int
-    rerank_method: Literal["individual"] | None
+    rerank_method: Literal["individual", "batch"] | None
     reranked: bool
     results: list[SearchResult]
 
@@ -353,7 +353,7 @@ def rrf_search_command(
     query: str,
     k: int = RRF_K,
     enhance: (Literal["spell", "expand", "rewrite"] | None) = None,
-    rerank_method: (Literal["individual"] | None) = None,
+    rerank_method: (Literal["individual", "batch"] | None) = None,
     limit: int = DEFAULT_SEARCH_LIMIT,
 ) -> RRFSearchCommandResult:
     movies = load_movies()
