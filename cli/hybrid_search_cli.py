@@ -26,25 +26,21 @@ def main() -> None:
         type=float,
         help="Scores to normalize",
     )
-
     weighted_parser = subparsers.add_parser(
         "weighted-search",
         help="Run weighted hybrid search",
     )
-
     weighted_parser.add_argument(
         "query",
         type=str,
         help="Search query",
     )
-
     weighted_parser.add_argument(
         "--alpha",
         type=float,
         default=0.5,
         help="Weight given to BM25 scores",
     )
-
     weighted_parser.add_argument(
         "--limit",
         type=int,
@@ -56,27 +52,23 @@ def main() -> None:
         "rrf-search",
         help="Run RRF hybrid search",
     )
-
     rrf_parser.add_argument(
         "query",
         type=str,
         help="Search query",
     )
-
     rrf_parser.add_argument(
         "-k",
         type=int,
         default=60,
         help="RRF constant",
     )
-
     rrf_parser.add_argument(
         "--limit",
         type=int,
         default=5,
         help="Number of results to return",
     )
-
     rrf_parser.add_argument(
         "--enhance",
         type=str,
@@ -87,12 +79,10 @@ def main() -> None:
         ],
         help="Query enhancement method",
     )
-
     rrf_parser.add_argument(
         "--rerank-method",
         type=str,
-        choices=["individual", "batch"],
-        help="Reranking method",
+        choices=["individual", "batch", "cross_encoder"],
     )
 
     args = parser.parse_args()
@@ -169,16 +159,19 @@ def main() -> None:
                 print(f"\n{i}. {res['title']}")
 
                 individual_score = res.get("individual_score")
-                rerank_rank = res["metadata"].get("rerank_method")
+                rerank_rank = res["metadata"].get("rerank_rank")
+                cross_encoder_score = res["metadata"].get("cross_encoder_score")
 
                 if individual_score is not None:
                     print(f"   Re-rank Score: {individual_score:.3f}/10")
                 elif rerank_rank is not None:
                     print(f"   Re-rank Rank: {rerank_rank}")
+                elif cross_encoder_score is not None:
+                    print(f"   Cross Encoder Score: {cross_encoder_score:.3f}")
 
                 metadata = res["metadata"]
 
-                print(f"   RRF Score: {metadata.get('rrf_score', res['score']):.3f}")
+                print(f"   RRF Score: {metadata.get('', res['score']):.3f}")
 
                 print(
                     f"   BM25 Rank: "

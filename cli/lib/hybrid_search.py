@@ -45,7 +45,7 @@ class RRFSearchCommandResult(TypedDict):
     enhance_method: Literal["spell", "expand", "rewrite"] | None
     query: str
     k: int
-    rerank_method: Literal["individual", "batch"] | None
+    rerank_method: Literal["individual", "batch", "cross_encoder"] | None
     reranked: bool
     results: list[SearchResult]
 

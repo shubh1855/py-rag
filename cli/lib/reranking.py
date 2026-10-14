@@ -6,6 +6,7 @@ from typing import Literal
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from sentence_transformers import CrossEncoder
 
 from .search_utils import SearchResult
 
@@ -21,6 +22,7 @@ client = OpenAI(
 )
 
 model = "openrouter/free"
+CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-TinyBERT-L2-v2"
 
 
 def extract_score(response_text: str) -> int | None:
@@ -54,17 +56,12 @@ Score:"""
     for _ in range(3):
         response = client.chat.completions.create(
             model=model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
+            messages=[{"role": "user", "content": prompt}],
         )
 
         response_text = (response.choices[0].message.content or "").strip()
-
         score = extract_score(response_text)
+
         if score is not None:
             return score
 
@@ -107,6 +104,9 @@ def llm_rerank_batch(
     documents: list[SearchResult],
     limit: int = 5,
 ) -> list[SearchResult]:
+    if not documents:
+        return []
+
     doc_list_str = "\n".join(
         f"{doc['id']}: {doc['title']} - {doc['document']}" for doc in documents
     )
@@ -131,12 +131,7 @@ Ranking:"""
 
     response = client.chat.completions.create(
         model=model,
-        messages=[
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        ],
+        messages=[{"role": "user", "content": prompt}],
     )
 
     response_text = (response.choices[0].message.content or "").strip()
@@ -149,12 +144,12 @@ Ranking:"""
         ) from exc
 
     if not isinstance(ranked_ids, list) or not all(
-        isinstance(movie_id, int) for movie_id in ranked_ids
+        isinstance(movie_id, int) and not isinstance(movie_id, bool)
+        for movie_id in ranked_ids
     ):
         raise ValueError("LLM batch ranking must be a JSON array of integers")
 
     document_map = {doc["id"]: doc for doc in documents}
-
     ranked_results: list[SearchResult] = []
     ranked_document_ids: set[int] = set()
 
@@ -200,13 +195,62 @@ Ranking:"""
     return ranked_results[:limit]
 
 
+def llm_rerank_cross_encoder(
+    query: str,
+    documents: list[SearchResult],
+    limit: int = 5,
+) -> list[SearchResult]:
+    if not documents:
+        return []
+
+    pairs: list[list[str]] = []
+
+    for doc in documents:
+        pairs.append(
+            [
+                query,
+                f"{doc.get('title', '')} - {doc.get('document', '')}",
+            ]
+        )
+
+    cross_encoder = CrossEncoder(
+        CROSS_ENCODER_MODEL,
+        device="cpu",
+    )
+
+    scores = cross_encoder.predict(pairs)
+
+    scored_docs: list[SearchResult] = []
+
+    for doc, score in zip(documents, scores):
+        scored_docs.append(
+            {
+                **doc,
+                "metadata": {
+                    **doc.get("metadata", {}),
+                    "cross_encoder_score": float(score),
+                },
+            }
+        )
+
+    scored_docs.sort(
+        key=lambda result: result["metadata"].get("cross_encoder_score", float("-inf")),
+        reverse=True,
+    )
+
+    return scored_docs[:limit]
+
+
 def rerank(
     query: str,
     documents: list[SearchResult],
-    method: Literal["individual", "batch"] = "batch",
+    method: Literal["individual", "batch", "cross_encoder"] = "batch",
     limit: int = 5,
 ) -> list[SearchResult]:
     if method == "individual":
         return llm_rerank_individual(query, documents, limit)
 
-    return llm_rerank_batch(query, documents, limit)
+    if method == "batch":
+        return llm_rerank_batch(query, documents, limit)
+
+    return llm_rerank_cross_encoder(query, documents, limit)
