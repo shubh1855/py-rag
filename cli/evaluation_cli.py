@@ -55,13 +55,19 @@ def main() -> None:
 
         retrieved_titles = [result["title"] for result in results]
         relevant_titles = set(relevant_docs)
+        retrieved_relevant_titles = set(retrieved_titles) & relevant_titles
 
-        relevant_count = sum(title in relevant_titles for title in retrieved_titles)
+        relevant_retrieved = len(retrieved_relevant_titles)
+        total_retrieved = len(retrieved_titles)
+        total_relevant = len(relevant_titles)
 
-        precision = relevant_count / len(retrieved_titles) if retrieved_titles else 0.0
+        precision = relevant_retrieved / total_retrieved if total_retrieved > 0 else 0.0
+
+        recall = relevant_retrieved / total_relevant if total_relevant > 0 else 0.0
 
         print(f"- Query: {query}")
         print(f"  - Precision@{limit}: {precision:.4f}")
+        print(f"  - Recall@{limit}: {recall:.4f}")
         print(f"  - Retrieved: {', '.join(retrieved_titles)}")
         print(f"  - Relevant: {', '.join(relevant_docs)}")
         print()
