@@ -10,16 +10,34 @@ from openai import OpenAI
 MODEL = "openrouter/free"
 
 
+def get_llm_client() -> OpenAI:
+    """Create an OpenRouter client using the configured API key."""
+    load_dotenv()
+    api_key = os.getenv("OPENROUTER_API_KEY")
+
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY environment variable not set")
+
+    return OpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+    )
+
+
+def format_results(results: list[SearchResult]) -> str:
+    """Format retrieved movies with their descriptions."""
+    return "\n\n".join(
+        f"Title: {result['title']}\nDescription: {result['document']}"
+        for result in results
+    )
+
+
 def generate_answer(
     query: str,
     results: list[SearchResult],
 ) -> str:
-    """Generate a context-aware answer using retrieved search results."""
-    docs = "\n\n".join(
-        f"Title: {result.get('title', 'Unknown title')}\n"
-        f"Description: {result.get('document', '')}"
-        for result in results
-    )
+    """Generate a context-aware answer from retrieved documents."""
+    docs = format_results(results)
 
     prompt = f"""You are a RAG agent for Webflyx, a movie streaming service.
 Your task is to provide a natural-language answer to the user's query based on documents retrieved during search.
@@ -33,25 +51,10 @@ Documents:
 
 Answer:"""
 
-    load_dotenv()
-    api_key = os.getenv("OPENROUTER_API_KEY")
-
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY environment variable not set")
-
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key,
-    )
-
+    client = get_llm_client()
     response = client.chat.completions.create(
         model=MODEL,
-        messages=[
-            {
-                "role": "user",
-                "content": prompt,
-            }
-        ],
+        messages=[{"role": "user", "content": prompt}],
         max_tokens=1000,
     )
 
@@ -64,6 +67,45 @@ Answer:"""
         raise RuntimeError("The LLM returned an empty answer.")
 
     return answer.strip()
+
+
+def generate_summary(
+    query: str,
+    results: list[SearchResult],
+) -> str:
+    """Synthesize information across multiple retrieved movies."""
+    formatted_results = format_results(results)
+
+    prompt = f"""Provide information useful to the query below by synthesizing data from multiple search results in detail.
+
+The goal is to provide comprehensive information so that users know what their options are.
+Your response should be information-dense and concise, with several key pieces of information about the genre, plot, etc. of each movie.
+
+This should be tailored to Webflyx users. Webflyx is a movie streaming service.
+
+Query: {query}
+
+Search results:
+{formatted_results}
+
+Provide a comprehensive 3–4 sentence answer that combines information from multiple sources:"""
+
+    client = get_llm_client()
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=1000,
+    )
+
+    if not response.choices:
+        raise RuntimeError("The LLM returned no response choices.")
+
+    summary = response.choices[0].message.content
+
+    if not summary:
+        raise RuntimeError("The LLM returned an empty summary.")
+
+    return summary.strip()
 
 
 def main() -> None:
@@ -83,6 +125,22 @@ def main() -> None:
         help="Search query for RAG",
     )
 
+    summarize_parser = subparsers.add_parser(
+        "summarize",
+        help="Summarize multiple search results",
+    )
+    summarize_parser.add_argument(
+        "query",
+        type=str,
+        help="Query to search and summarize",
+    )
+    summarize_parser.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help="Number of search results to summarize (default: 5)",
+    )
+
     args = parser.parse_args()
 
     match args.command:
@@ -91,7 +149,6 @@ def main() -> None:
 
             movies = load_movies()
             searcher = HybridSearch(movies)
-
             results = searcher.rrf_search(
                 query=query,
                 k=60,
@@ -100,12 +157,36 @@ def main() -> None:
 
             print("Search Results:")
             for result in results:
-                print(f"- {result.get('title', 'Unknown title')}")
+                print(f"- {result['title']}")
 
             answer = generate_answer(query, results)
 
             print("\nRAG Response:")
             print(answer)
+
+        case "summarize":
+            query: str = args.query
+            limit: int = args.limit
+
+            if limit <= 0:
+                parser.error("--limit must be greater than 0")
+
+            movies = load_movies()
+            searcher = HybridSearch(movies)
+            results = searcher.rrf_search(
+                query=query,
+                k=60,
+                limit=limit,
+            )
+
+            print("Search Results:")
+            for result in results:
+                print(f"  - {result['title']}")
+
+            summary = generate_summary(query, results)
+
+            print("\nLLM Summary:")
+            print(summary)
 
         case _:
             parser.print_help()
