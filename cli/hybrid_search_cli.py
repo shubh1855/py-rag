@@ -6,6 +6,7 @@ from lib.hybrid_search import (
     rrf_search_command,
     weighted_search_command,
 )
+from lib.reranking import evaluate_results
 
 
 def main() -> None:
@@ -84,6 +85,11 @@ def main() -> None:
         "--rerank-method",
         type=str,
         choices=["individual", "batch", "cross_encoder"],
+    )
+    rrf_parser.add_argument(
+        "--evaluate",
+        action="store_true",
+        help="Evaluate search result relevance using an LLM",
     )
 
     args = parser.parse_args()
@@ -189,6 +195,20 @@ def main() -> None:
                 )
 
                 print(f"   {res['document']}...")
+
+            if args.evaluate:
+                scores = evaluate_results(
+                    result["query"],
+                    result["results"],
+                )
+
+                print("\nEvaluation Report:")
+
+                for i, (res, score) in enumerate(
+                    zip(result["results"], scores),
+                    start=1,
+                ):
+                    print(f"{1}. {res['title']}: {score}/3")
 
         case _:
             parser.print_help()

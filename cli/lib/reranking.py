@@ -254,3 +254,70 @@ def rerank(
         return llm_rerank_batch(query, documents, limit)
 
     return llm_rerank_cross_encoder(query, documents, limit)
+
+
+def evaluate_results(
+    query: str,
+    documents: list[SearchResult],
+) -> list[int]:
+    """Evaluate search results on a relevance scale from 0 to 3."""
+    if not documents:
+        return []
+
+    formatted_results = [
+        f"{doc['id']}: {doc['title']} - {doc['document']}" for doc in documents
+    ]
+
+    prompt = f"""Rate how relevant each result is to this query on a 0-3 scale:
+
+Query: "{query}"
+
+Results:
+{chr(10).join(formatted_results)}
+
+Scale:
+- 3: Highly relevant
+- 2: Relevant
+- 1: Marginally relevant
+- 0: Not relevant
+
+Do NOT give any numbers other than 0, 1, 2, or 3.
+
+Return ONLY the scores in the same order you were given the documents.
+Return a valid JSON list, nothing else. For example:
+
+[2, 0, 3, 2, 0, 1]"""
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+    )
+
+    response_text = (response.choices[0].message.content or "").strip()
+
+    try:
+        scores = json.loads(response_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"LLM returned invalid JSON for result evaluation: {response_text!r}"
+        ) from exc
+
+    if (
+        not isinstance(scores, list)
+        or len(scores) != len(documents)
+        or not all(
+            isinstance(score, int) and not isinstance(score, bool) and 0 <= score <= 3
+            for score in scores
+        )
+    ):
+        raise ValueError(
+            "LLM evaluation must return one integer score from 0 to 3 "
+            "for each search result"
+        )
+
+    return scores
