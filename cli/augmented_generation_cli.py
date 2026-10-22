@@ -108,6 +108,58 @@ Provide a comprehensive 3–4 sentence answer that combines information from mul
     return summary.strip()
 
 
+def generate_cited_answer(
+    query: str,
+    results: list[SearchResult],
+) -> str:
+    """Generate an answer that cites the retrieved documents."""
+    documents = "\n\n".join(
+        f"[{index}] Title: {result['title']}\nDescription: {result['document']}"
+        for index, result in enumerate(results, start=1)
+    )
+
+    if not documents:
+        documents = "No documents were retrieved."
+
+    prompt = f"""Answer the query below and give information based on the provided documents.
+
+The answer should be tailored to users of Webflyx, a movie streaming service.
+If not enough information is available to provide a good answer, say so, but give the best answer possible while citing the sources available.
+
+Query: {query}
+
+Documents:
+{documents}
+
+Instructions:
+- Provide a comprehensive answer that addresses the query
+- Cite sources in the format [1], [2], etc. when referencing information
+- Only cite source numbers that appear in the provided documents
+- Ensure each citation supports the associated claim
+- If sources disagree, mention the different viewpoints
+- If the answer isn't in the provided documents, say "I don't have enough information"
+- Be direct and informative
+
+Answer:"""
+
+    client = get_llm_client()
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=1000,
+    )
+
+    if not response.choices:
+        raise RuntimeError("The LLM returned no response choices.")
+
+    answer = response.choices[0].message.content
+
+    if not answer:
+        raise RuntimeError("The LLM returned an empty answer.")
+
+    return answer.strip()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Retrieval Augmented Generation CLI")
     subparsers = parser.add_subparsers(
@@ -139,6 +191,22 @@ def main() -> None:
         type=int,
         default=5,
         help="Number of search results to summarize (default: 5)",
+    )
+
+    citations_parser = subparsers.add_parser(
+        "citations",
+        help="Answer a query with source citations",
+    )
+    citations_parser.add_argument(
+        "query",
+        type=str,
+        help="Query to answer with citations",
+    )
+    citations_parser.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help="Number of search results to use (default: 5)",
     )
 
     args = parser.parse_args()
@@ -187,6 +255,30 @@ def main() -> None:
 
             print("\nLLM Summary:")
             print(summary)
+
+        case "citations":
+            query: str = args.query
+            limit: int = args.limit
+
+            if limit <= 0:
+                parser.error("--limit must be greater than 0")
+
+            movies = load_movies()
+            searcher = HybridSearch(movies)
+            results = searcher.rrf_search(
+                query=query,
+                k=60,
+                limit=limit,
+            )
+
+            print("Search Results:")
+            for result in results:
+                print(f"  - {result['title']}")
+
+            answer = generate_cited_answer(query, results)
+
+            print("\nLLM Answer:")
+            print(answer)
 
         case _:
             parser.print_help()
