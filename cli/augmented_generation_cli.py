@@ -4,10 +4,11 @@ import os
 from dotenv import load_dotenv
 from inverted_index import load_movies
 from lib.hybrid_search import HybridSearch
-from lib.search_utils import SearchResult
-from openai import OpenAI
+from lib.search_utils import Movie, SearchResult
+from openai import OpenAI, RateLimitError
 
-MODEL = "openrouter/free"
+# MODEL = "openrouter/free"
+MODEL = "google/gemma-4-26b-a4b-it:free"
 
 
 def get_llm_client() -> OpenAI:
@@ -52,11 +53,39 @@ Documents:
 Answer:"""
 
     client = get_llm_client()
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=1000,
-    )
+    try:
+        response = client.chat.completions.create(
+            model="nvidia/nemotron-3-ultra-550b-a55b:free",
+            extra_body={
+                "models": [
+                    "google/gemma-4-26b-a4b-it:free",
+                    "nvidia/nemotron-3-super-120b-a12b:free",
+                    "nvidia/nemotron-nano-9b-v2:free",
+                    "cohere/north-mini-code:free",
+                ],
+            },
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful, conversational movie assistant. "
+                        "Answer movie questions normally, using the provided "
+                        "movie information."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            max_tokens=1000,
+        )
+    except RateLimitError as exc:
+        raise RuntimeError(
+            "All configured free-model routes may be unavailable or "
+            "rate-limited. Retry later, or configure your own provider "
+            "API key in OpenRouter's integrations."
+        ) from exc
 
     if not response.choices:
         raise RuntimeError("The LLM returned no response choices.")
@@ -160,6 +189,86 @@ Answer:"""
     return answer.strip()
 
 
+def generate_question_answer(
+    question: str,
+    results: list[SearchResult],
+    movies: list[Movie],
+) -> str:
+    """Answer a question using full descriptions of retrieved movies."""
+    descriptions_by_id = {movie["id"]: movie["description"] for movie in movies}
+
+    context = "\n\n".join(
+        f"Title: {result['title']}\n"
+        f"Description: "
+        f"{descriptions_by_id.get(result['id'], result['document'])}"
+        for result in results
+    )
+
+    prompt = f"""Answer the user's question based on the provided movies that are available on Webflyx, a streaming service.
+
+Question: {question}
+
+Documents:
+{context}
+
+Instructions:
+- Answer the question directly and concisely.
+- Be casual and conversational.
+- Don't be cringe or hype-y.
+- Talk like a normal person would in a chat conversation.
+- Focus on the movie most relevant to the question.
+- Use the provided descriptions as context.
+- If the descriptions do not contain enough information, give the best answer you can without inventing details.
+- Do not return a safety classification instead of an answer.
+
+Answer:"""
+
+    client = get_llm_client()
+
+    try:
+        response = client.chat.completions.create(
+            model=MODEL,
+            extra_body={
+                "models": [
+                    "nvidia/nemotron-3-ultra-550b-a55b:free",
+                    "nvidia/nemotron-3-super-120b-a12b:free",
+                    "cohere/north-mini-code:free",
+                ],
+            },
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful, conversational movie assistant. "
+                        "Answer the user's actual question using the "
+                        "provided movie descriptions."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            max_tokens=1000,
+        )
+    except RateLimitError as exc:
+        raise RuntimeError(
+            "The primary model and configured fallbacks are unavailable "
+            "or rate-limited. Please retry later or configure your own "
+            "provider API key in OpenRouter."
+        ) from exc
+
+    if not response.choices:
+        raise RuntimeError("The LLM returned no response choices.")
+
+    answer = response.choices[0].message.content
+
+    if not answer or not answer.strip():
+        raise RuntimeError("The LLM returned an empty answer.")
+
+    return answer.strip()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Retrieval Augmented Generation CLI")
     subparsers = parser.add_subparsers(
@@ -203,6 +312,22 @@ def main() -> None:
         help="Query to answer with citations",
     )
     citations_parser.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help="Number of search results to use (default: 5)",
+    )
+
+    question_parser = subparsers.add_parser(
+        "question",
+        help="Answer a question using retrieved movies",
+    )
+    question_parser.add_argument(
+        "question",
+        type=str,
+        help="Question to answer",
+    )
+    question_parser.add_argument(
         "--limit",
         type=int,
         default=5,
@@ -278,6 +403,35 @@ def main() -> None:
             answer = generate_cited_answer(query, results)
 
             print("\nLLM Answer:")
+            print(answer)
+
+        case "question":
+            question: str = args.question
+            limit: int = args.limit
+
+            if limit <= 0:
+                parser.error("--limit must be greater than 0")
+
+            movies = load_movies()
+            searcher = HybridSearch(movies)
+
+            results = searcher.rrf_search(
+                query=question,
+                k=60,
+                limit=limit,
+            )
+
+            print("Search Results:")
+            for result in results:
+                print(f"  - {result['title']}")
+
+            answer = generate_question_answer(
+                question,
+                results,
+                movies,
+            )
+
+            print("\nAnswer:")
             print(answer)
 
         case _:
