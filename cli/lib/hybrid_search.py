@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Literal, TypedDict
 
@@ -15,6 +16,8 @@ from .search_utils import (
     format_search_result,
 )
 from .semantic_search import ChunkedSemanticSearch
+
+logger = logging.getLogger(__name__)
 
 
 class CombinedScoreData(TypedDict):
@@ -352,24 +355,27 @@ def weighted_search_command(
 def rrf_search_command(
     query: str,
     k: int = RRF_K,
-    enhance: (Literal["spell", "expand", "rewrite"] | None) = None,
-    rerank_method: (Literal["individual", "batch"] | None) = None,
+    enhance: Literal["spell", "expand", "rewrite"] | None = None,
+    rerank_method: Literal["individual", "batch", "cross_encoder"] | None = None,
     limit: int = DEFAULT_SEARCH_LIMIT,
 ) -> RRFSearchCommandResult:
     movies = load_movies()
-
     searcher = HybridSearch(movies)
 
     original_query = query
     enhanced_query = None
 
+    # log the original query.
+    logger.debug("Original query: %s", original_query)
+
+    # enhance the query if requested.
     if enhance:
-        enhanced_query = enhance_query(
-            query,
-            method=enhance,
-        )
+        enhanced_query = enhance_query(query, method=enhance)
         query = enhanced_query
 
+    logger.debug("Query after enhancements: %s", query)
+
+    # retrieve candidates using reciprocal rank fusion.
     search_limit = limit * SEARCH_MULTIPLIER if rerank_method else limit
 
     search_results = searcher.rrf_search(
@@ -378,6 +384,20 @@ def rrf_search_command(
         search_limit,
     )
 
+    logger.debug(
+        "Results after RRF search (%d candidates): %s",
+        len(search_results),
+        [
+            {
+                "title": result["title"],
+                "score": result["score"],
+                "metadata": result["metadata"],
+            }
+            for result in search_results
+        ],
+    )
+
+    # re-rank candidates if requested.
     if rerank_method:
         results = rerank(
             query,
@@ -387,8 +407,22 @@ def rrf_search_command(
         )
         reranked = True
     else:
-        results = [result for result in search_results]
+        results = list(search_results)
         reranked = False
+
+    logger.debug(
+        "Final results after re-ranking (method=%s): %s",
+        rerank_method,
+        [
+            {
+                "title": result["title"],
+                "score": result["score"],
+                "metadata": result["metadata"],
+                "individual_score": result.get("individual_score"),
+            }
+            for result in results
+        ],
+    )
 
     return {
         "original_query": original_query,

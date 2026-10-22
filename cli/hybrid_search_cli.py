@@ -1,4 +1,5 @@
 import argparse
+import logging
 
 from lib.hybrid_search import (
     normalize_scores,
@@ -86,6 +87,13 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    if args.command == "rrf-search":
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(levelname)s:%(name)s:%(message)s",
+        )
+    logging.getLogger(rrf_search_command.__module__).setLevel(logging.DEBUG)
 
     match args.command:
         case "normalize":
